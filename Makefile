@@ -7,6 +7,9 @@
 # Default is to run a clean build and test
 .DEFAULT_GOAL = build
 
+USERNAME = "mlavergne@gmail.com"
+PASSWORD ?= ""
+
 DEVNAME = Marc Lavergne
 DEVID = Q6H2FB9YW2
 DEVELOPER := $(shell echo ${DEVNAME} | sed 's/ /_/')
@@ -25,25 +28,35 @@ XCDEST := platform=iOS,id=${UDID},OS=${IOS_VER}
 SDK ?= iphoneos
 # SDK := iphonesimulator
 
+# ##############################################################################
+# Setup
 #
-# Setup helpers
-# 
 
 setup:
 	sudo gem install xcpretty
 
+# generate app-specific password
+apppasswd:
+	open "https://appleid.apple.com/account/manage"
+
+# save app-specific password to keychain
+appsave:
+	xcrun altool --store-password-in-keychain-item ADP --username ${USERNAME} --password "@keychain:ADP"
+
+# list development devices
 devices:
 	instruments -s devices
 
+# list ADP certs
 certs:
 	security find-identity -p basic -v
 
-schemes:
-	xcodebuild -workspace ${WORKSPACE}.xcworkspace -list
-
-#
+# ##############################################################################
 # Build targets
 #
+
+schemes:
+	xcodebuild -workspace ${WORKSPACE}.xcworkspace -list
 
 build:
 	xcodebuild test -workspace ${WORKSPACE}.xcworkspace -scheme ${SCHEME} -destination "$(XCDEST)" | xcpretty
@@ -60,7 +73,7 @@ sim:
 package:
 	xcrun -sdk ${SDK} PackageApplication -o "${IPA_DIR}/${WORKSPACE}.ipa" -verbose "${WORKSPACE}.app" -sign "iPhone Distribution: ${DEVNAME}" --embed "${DEVELOPER}_Ad_Hoc.mobileprovision"
 
-#
+# ##############################################################################
 # IPA targets
 #
 
@@ -70,40 +83,28 @@ archive:
 ipa:
 	xcodebuild -exportArchive -archivePath $(PWD)/dist/${WORKSPACE}.xcarchive -exportOptionsPlist exportOptions.plist -exportPath $(PWD)/dist
 
+SIGNID := "iPhone Distribution: ${DEVNAME}"
 reipa:
 	unzip ${WORKSPACE}.ipa
-	/usr/bin/codesign -f -s "iPhone Distribution: Company Name" --resource-rules "Payload/${WORKSPACE}.app/ResourceRules.plist" "Payload/${WORKSPACE}.app"
+	codesign -f --sign "${SIGNID}" --resource-rules "Payload/${WORKSPACE}.app/ResourceRules.plist" "Payload/${WORKSPACE}.app"
 	zip -qr "${WORKSPACE}.resigned.ipa" Payload
-
-
 
 # ##############################################################################
 # MacOS
 #
 
+IDENTIFIER = "com.marclavergne.Demo"
 
-USERNAME = "mlavergne@gmail.com"
-PASSWORD ?= ""
-
-BUNDLEID = "com.marclavergne.Demo"
-
+SIGNID := "Developer ID Installer: ${DEVNAME} (${DEVID})"
 #
 # Signing
 #
 
-# adhoc macos pkg distbution
-signpkg:
-	productsign --sign "Developer ID Installer: ${DEVNAME} (${DEVID})" ${WORKSPACE}-${VERSION}-tmp.pkg ${WORKSPACE}-${VERSION}.pkg
-
 # adhoc macos app distribution
 signmac:
-	codesign --deep --force --verbose --sign "Developer ID Installer: ${DEVNAME} (${DEVID})" ${WORKSPACE}.app
+	codesign --deep --force --verbose --sign "${SIGNID}" ${WORKSPACE}.app
 	codesign --verify -vvvv ${WORKSPACE}.app
 	spctl -a -vvvv ${WORKSPACE}.app
-
-# store the altool password in the keychain
-addpass:
-	xcrun altool --store-password-in-keychain-item ADP --username ${USERNAME} --password "${PASSWORD}"
 
 notarize:
 	xcrun altool --notarize-app --type macos --primary-bundle-id ${IDENTIFIER} --asc-provider ${DEVID} --username "${USERNAME}" --password "@keychain:ADP" --file ${WORKSPACE}.app}
@@ -112,10 +113,10 @@ staple:
 	xcrun stapler staple -v ${WORKSPACE}.app
 
 validate:
-	xcrun altool --validate-app --type macos --file ${WORKSPACE}.app --username ${USERNAME} --password "${PASSWORD}"
+	xcrun altool --validate-app --type macos --file ${WORKSPACE}.app --username ${USERNAME} --password "@keychain:ADP"
 
 uploadmac:
-	xcrun altool --upload-app --type macos --file ${WORKSPACE}.app --username ${USERNAME} --password "${PASSWORD}"
+	xcrun altool --upload-app --type macos --file ${WORKSPACE}.app --username ${USERNAME} --password "@keychain:ADP"
 
 
 # ##############################################################################
@@ -130,4 +131,39 @@ tftoken:
 
 testflight:
 	curl "http://testflightapp.com/api/builds.json" -F file=@"${IPA_DIR}/${WORKSPACE}.ipa" -F dsym=@"${IPA_DIR}/${WORKSPACE}.dSYM.zip" -F api_token="${API_TOKEN}" -F team_token="${TEAM_TOKEN}" -F notes="Build ${VERSION} uploaded automatically from Xcode." -F notify=True -F distribution_lists='all'
-	
+
+# ##############################################################################
+# Packages
+#
+
+codesign:
+	codesign -f -o runtime --timestamp --sign "Developer ID Application: ${DEVNAME} (${DEVID})" build/demo
+
+pkgbuild:
+	pkgbuild --version $(VERSION) --identifier $(IDENTIFIER) --install-location /usr/local/bin --root build ${WORKSPACE}.pkg
+
+pkgsign:
+	productsign --sign "Developer ID Installer: ${DEVNAME} (${DEVID})" ${WORKSPACE}.pkg ${WORKSPACE}-signed.pkg
+
+pkgvalidate:
+	codesign -dvv build/demo
+	pkgutil --check-signature ${WORKSPACE}.pkg
+
+pkgnotarize:
+	xcrun altool --notarize-app --type osx --primary-bundle-id ${IDENTIFIER} --username "${USERNAME}" --password "@keychain:ADP" --file ${WORKSPACE}.pkg
+
+NTZUUID = xxxx-xxxx-xxxx-xxxx
+status:
+	xcrun altool --notarization-info "${NTZUUID}" --username ${USERNAME} --password "@keychain:ADP"
+
+staple:
+	xcrun stapler staple ${WORKSPACE}.pkg
+
+pkglist:
+	pkgutil --payload-files ${WORKSPACE}.pkg
+
+pkginstall:
+	spctl -a -vv -t install ${WORKSPACE}.pkg
+
+pkguninstall:
+	sudo pkgutil --forget $(IDENTIFIER)

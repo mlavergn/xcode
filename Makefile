@@ -44,7 +44,7 @@ appsave:
 	xcrun altool --store-password-in-keychain-item ADP --username ${USERNAME} --password DEVELOPER_TOOLS_PASSWORD
 
 # ##############################################################################
-# Setup
+# Keychain
 #
 
 # list ADP certs
@@ -57,11 +57,23 @@ certdelete:
 certadd:
 	security import FILE
 
+import:
+	security import key.pem -k ~/Library/Keychains/login.keychain
+
 export:
-	security export -t privKey
+	echo -n ${PASSWD} | pbcopy
+	security export -t privKeys -k login.keychain -f pkcs12 -o privKeys.p12
 
 keychain:
 	open -a Keychain\ Access
+
+# not used
+savepass:
+	security add-generic-password
+
+# not used
+getpass:
+	security find-generic-password -D "application password"
 
 # ##############################################################################
 # Xcode targets

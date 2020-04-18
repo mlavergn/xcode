@@ -41,53 +41,75 @@ apppasswd:
 
 # save app-specific password to keychain
 appsave:
-	xcrun altool --store-password-in-keychain-item ADP --username ${USERNAME} --password "@keychain:ADP"
+	xcrun altool --store-password-in-keychain-item ADP --username ${USERNAME} --password DEVELOPER_TOOLS_PASSWORD
 
-# list development devices
-devices:
-	instruments -s devices
+# ##############################################################################
+# Setup
+#
 
 # list ADP certs
 certs:
 	security find-identity -p basic -v
 
+certdelete:
+	security delete-certificate -Z TOKEN_HASH
+
+certadd:
+	security import FILE
+
+export:
+	security export -t privKey
+
+keychain:
+	open -a Keychain\ Access
+
 # ##############################################################################
-# Build targets
+# Xcode targets
 #
 
 schemes:
 	xcodebuild -workspace ${WORKSPACE}.xcworkspace -list
 
 build:
-	xcodebuild test -workspace ${WORKSPACE}.xcworkspace -scheme ${SCHEME} -destination "$(XCDEST)" | xcpretty
+	xcodebuild -workspace ${WORKSPACE}.xcworkspace -scheme ${SCHEME} -destination "$(XCDEST)" build | xcpretty
 
-tbuild:
+test:
+	xcodebuild -workspace ${WORKSPACE}.xcworkspace -scheme ${SCHEME} -destination "$(XCDEST)" test | xcpretty
+
+testbuild:
 	xcodebuild -workspace ${WORKSPACE}.xcworkspace -scheme ${SCHEME} -destination ${XCDEST} build-for-testing | xcpretty
 
+# ##############################################################################
+# Devices
+#
+
+devices:
+	instruments -s devices
+
 sinstall:
-	xcrun simctl install booted ~/src/ios/sim/Applications/${SCHEME}.app
+	xcrun simctl install booted ./dist/${WORKSPACE}.app
 
 sim:
 	xcrun instruments -w "iPhone Xʀ (${IOS_VER} Simulator)"
-
-package:
-	xcrun -sdk ${SDK} PackageApplication -o "${IPA_DIR}/${WORKSPACE}.ipa" -verbose "${WORKSPACE}.app" -sign "iPhone Distribution: ${DEVNAME}" --embed "${DEVELOPER}_Ad_Hoc.mobileprovision"
 
 # ##############################################################################
 # IPA targets
 #
 
 archive:
-	xcodebuild -workspace ${WORKSPACE}.xcworkspace -scheme ${SCHEME} -sdk ${SDK} -configuration AdHoc archive -archivePath $(PWD)/dist/${WORKSPACE}.xcarchive
+	xcodebuild -workspace ${WORKSPACE}.xcworkspace -scheme ${SCHEME} -sdk ${SDK} -configuration AdHoc archive -archivePath ./dist/${WORKSPACE}.xcarchive
 
 ipa:
-	xcodebuild -exportArchive -archivePath $(PWD)/dist/${WORKSPACE}.xcarchive -exportOptionsPlist exportOptions.plist -exportPath $(PWD)/dist
+	xcodebuild -exportArchive -archivePath ./dist/${WORKSPACE}.xcarchive -exportOptionsPlist exportOptions.plist -exportPath ./dist
 
 SIGNID := "iPhone Distribution: ${DEVNAME}"
 reipa:
 	unzip ${WORKSPACE}.ipa
 	codesign -f --sign "${SIGNID}" --resource-rules "Payload/${WORKSPACE}.app/ResourceRules.plist" "Payload/${WORKSPACE}.app"
 	zip -qr "${WORKSPACE}.resigned.ipa" Payload
+
+ipasign:
+	xcrun -sdk ${SDK} PackageApplication -o "${IPA_DIR}/${WORKSPACE}.ipa" -verbose "${WORKSPACE}.app" -sign "iPhone Distribution: ${DEVNAME}" --embed "${DEVELOPER}_Ad_Hoc.mobileprovision"
 
 # ##############################################################################
 # MacOS
@@ -106,11 +128,8 @@ signmac:
 	codesign --verify -vvvv ${WORKSPACE}.app
 	spctl -a -vvvv ${WORKSPACE}.app
 
-notarize:
-	xcrun altool --notarize-app --type macos --primary-bundle-id ${IDENTIFIER} --asc-provider ${DEVID} --username "${USERNAME}" --password "@keychain:ADP" --file ${WORKSPACE}.app}
-
-staple:
-	xcrun stapler staple -v ${WORKSPACE}.app
+codesign:
+	codesign -f -o runtime --timestamp --sign "Developer ID Application: ${DEVNAME} (${DEVID})" build/demo
 
 validate:
 	xcrun altool --validate-app --type macos --file ${WORKSPACE}.app --username ${USERNAME} --password "@keychain:ADP"
@@ -136,9 +155,6 @@ testflight:
 # Packages
 #
 
-codesign:
-	codesign -f -o runtime --timestamp --sign "Developer ID Application: ${DEVNAME} (${DEVID})" build/demo
-
 pkgbuild:
 	pkgbuild --version $(VERSION) --identifier $(IDENTIFIER) --install-location /usr/local/bin --root build ${WORKSPACE}.pkg
 
@@ -149,12 +165,12 @@ pkgvalidate:
 	codesign -dvv build/demo
 	pkgutil --check-signature ${WORKSPACE}.pkg
 
-pkgnotarize:
+pkgnote:
 	xcrun altool --notarize-app --type osx --primary-bundle-id ${IDENTIFIER} --username "${USERNAME}" --password "@keychain:ADP" --file ${WORKSPACE}.pkg
 
-NTZUUID = xxxx-xxxx-xxxx-xxxx
-status:
-	xcrun altool --notarization-info "${NTZUUID}" --username ${USERNAME} --password "@keychain:ADP"
+NOTEUUID = xxxx-xxxx-xxxx-xxxx
+notestatus:
+	xcrun altool --notarization-info "${NOTEUUID}" --username ${USERNAME} --password "@keychain:ADP"
 
 staple:
 	xcrun stapler staple ${WORKSPACE}.pkg

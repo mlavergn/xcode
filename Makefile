@@ -61,7 +61,7 @@ import:
 	security import key.pem -k ~/Library/Keychains/login.keychain
 
 export:
-	echo -n ${PASSWD} | pbcopy
+	echo -n ${PASSWORD} | pbcopy
 	security export -t privKeys -k login.keychain -f pkcs12 -o privKeys.p12
 
 keychain:

@@ -75,6 +75,13 @@ savepass:
 getpass:
 	security find-generic-password -D "application password"
 
+profiles:
+	ls ~/Library/MobileDevice/Provisioning\ Profiles
+
+MPID := d854e6ef-f4be-42b7-9451-568e18812531.mobileprovision
+dump:
+	strings ~/Library/MobileDevice/Provisioning\ Profiles/${MPID} | grep -A 10 AppIDName
+
 # ##############################################################################
 # Xcode targets
 #
